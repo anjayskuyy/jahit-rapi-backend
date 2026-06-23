@@ -14,11 +14,6 @@ use Illuminate\Support\Facades\DB;
 
 class PayrollController extends Controller
 {
-    /**
-     * GET /api/payroll/preview?tanggal_mulai=...&tanggal_selesai=...
-     * Hitung tanpa menyimpan. Response: { grand_total, items: [...] }
-     * (items belum punya id/status_slip — belum tersimpan).
-     */
     public function preview(Request $request)
     {
         $request->validate([
@@ -34,14 +29,6 @@ class PayrollController extends Controller
         return response()->json($hasil);
     }
 
-    /**
-     * POST /api/payroll/run
-     * Body: { tanggal_mulai, tanggal_selesai }
-     * Hitung ulang (sengaja tidak menerima hasil preview dari frontend,
-     * supaya nilai final selalu dihitung dari data terbaru di server)
-     * lalu simpan sebagai PayrollRun + PayrollItem. Kasbon aktif yang
-     * kena potongan otomatis ditandai 1 cicilan terbayar.
-     */
     public function run(Request $request)
     {
         $data = $request->validate([
@@ -60,18 +47,19 @@ class PayrollController extends Controller
 
             foreach ($hasil['items'] as $item) {
                 $run->items()->create([
-                    'karyawan_id' => $item['karyawan_id'],
-                    'nama' => $item['nama'],
-                    'bagian' => $item['bagian'],
-                    'jenis_gaji' => $item['jenis_gaji'],
-                    'hari_hadir' => $item['hari_hadir'],
-                    'gaji_pokok' => $item['gaji_pokok'],
-                    'total_jam_lembur' => $item['total_jam_lembur'],
-                    'upah_lembur' => $item['upah_lembur'],
+                    'karyawan_id'     => $item['karyawan_id'],
+                    'nama'            => $item['nama'],
+                    'bagian'          => $item['bagian'],
+                    'no_whatsapp'     => $item['no_whatsapp'], // FIX: simpan no WA
+                    'jenis_gaji'      => $item['jenis_gaji'],
+                    'hari_hadir'      => $item['hari_hadir'],
+                    'gaji_pokok'      => $item['gaji_pokok'],
+                    'total_jam_lembur'=> $item['total_jam_lembur'],
+                    'upah_lembur'     => $item['upah_lembur'],
                     'potongan_kasbon' => $item['potongan_kasbon'],
-                    'kasbon_id' => $item['kasbon_id'],
-                    'total_bersih' => $item['total_bersih'],
-                    'status_slip' => 'belum_terkirim',
+                    'kasbon_id'       => $item['kasbon_id'],
+                    'total_bersih'    => $item['total_bersih'],
+                    'status_slip'     => 'belum_terkirim',
                 ]);
 
                 if ($item['kasbon_id']) {
@@ -92,9 +80,6 @@ class PayrollController extends Controller
         return response()->json($run->load('items'), 201);
     }
 
-    /**
-     * GET /api/payroll — daftar ringkas semua run (tanpa items).
-     */
     public function index()
     {
         return PayrollRun::withCount('items as total_karyawan')
@@ -105,17 +90,11 @@ class PayrollController extends Controller
             ->get();
     }
 
-    /**
-     * GET /api/payroll/{id} — detail run + semua item-nya.
-     */
     public function show(PayrollRun $payroll)
     {
         return $payroll->load('items');
     }
 
-    /**
-     * PATCH /api/payroll/items/{itemId}/kirim
-     */
     public function kirim(PayrollItem $item)
     {
         $item->status_slip = 'terkirim';
@@ -124,19 +103,6 @@ class PayrollController extends Controller
         return $item;
     }
 
-    /**
-     * Logika inti penghitungan payroll, dipakai bareng oleh preview() & run().
-     *
-     * Per karyawan:
-     * - hari_hadir: jumlah absensi (tepat_waktu/terlambat) dalam periode
-     * - gaji_pokok: rate_harian * hari_hadir (kalau harian) atau
-     *   gaji_bulanan penuh (kalau bulanan — tidak diprorata)
-     * - upah_lembur: total jam lembur dalam periode * rate_lembur_per_jam
-     * - potongan_kasbon: 1x nominal_per_cicilan dari kasbon aktif
-     *   (kasbon status='berjalan') paling lama, kalau ada
-     * - karyawan harian tanpa kehadiran & tanpa lembur di periode ini
-     *   dilewati (tidak masuk daftar — tidak ada yang perlu dibayar)
-     */
     private function hitungPeriode(string $mulai, string $selesai): array
     {
         $karyawanList = Karyawan::orderBy('nama')->get();
@@ -174,17 +140,18 @@ class PayrollController extends Controller
             $totalBersih = $gajiPokok + $upahLembur - $potonganKasbon;
 
             $items[] = [
-                'karyawan_id' => $k->id,
-                'nama' => $k->nama,
-                'bagian' => $k->bagian,
-                'jenis_gaji' => $k->jenis_gaji,
-                'hari_hadir' => $hariHadir,
-                'gaji_pokok' => round($gajiPokok, 2),
+                'karyawan_id'      => $k->id,
+                'nama'             => $k->nama,
+                'bagian'           => $k->bagian,
+                'no_whatsapp'      => $k->no_whatsapp, // FIX: ambil no WA dari karyawan
+                'jenis_gaji'       => $k->jenis_gaji,
+                'hari_hadir'       => $hariHadir,
+                'gaji_pokok'       => round($gajiPokok, 2),
                 'total_jam_lembur' => $totalJamLembur,
-                'upah_lembur' => round($upahLembur, 2),
-                'potongan_kasbon' => round($potonganKasbon, 2),
-                'kasbon_id' => $kasbonId,
-                'total_bersih' => round($totalBersih, 2),
+                'upah_lembur'      => round($upahLembur, 2),
+                'potongan_kasbon'  => round($potonganKasbon, 2),
+                'kasbon_id'        => $kasbonId,
+                'total_bersih'     => round($totalBersih, 2),
             ];
 
             $grandTotal += $totalBersih;
@@ -192,7 +159,7 @@ class PayrollController extends Controller
 
         return [
             'grand_total' => round($grandTotal, 2),
-            'items' => $items,
+            'items'       => $items,
         ];
     }
 }
