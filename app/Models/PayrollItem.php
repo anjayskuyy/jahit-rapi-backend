@@ -16,6 +16,7 @@ class PayrollItem extends Model
         'karyawan_id',
         'nama',
         'bagian',
+        'no_whatsapp', // FIX: tambah no_whatsapp
         'jenis_gaji',
         'hari_hadir',
         'gaji_pokok',
@@ -28,11 +29,11 @@ class PayrollItem extends Model
     ];
 
     protected $casts = [
-        'gaji_pokok' => 'float',
+        'gaji_pokok'       => 'float',
         'total_jam_lembur' => 'float',
-        'upah_lembur' => 'float',
-        'potongan_kasbon' => 'float',
-        'total_bersih' => 'float',
+        'upah_lembur'      => 'float',
+        'potongan_kasbon'  => 'float',
+        'total_bersih'     => 'float',
     ];
 
     public function payrollRun()
